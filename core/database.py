@@ -22,7 +22,7 @@ Base = declarative_base()
 
 
 async def init_db() -> None:
-    """Create all tables if they don\'t exist."""
+    """Create all tables if they do not exist."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
