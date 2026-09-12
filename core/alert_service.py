@@ -16,7 +16,7 @@ class AlertService:
         self.bot = bot
 
     async def check_and_alert(self) -> None:
-        """Check pending tickets and send alerts to operator group."""
+        """Check pending tickets and send alerts as reply to original chat box."""
         async with AsyncSessionLocal() as session:
             service = TicketService(session)
 
@@ -35,11 +35,10 @@ class AlertService:
                     )
 
     async def _send_alert(self, ticket, service: TicketService) -> None:
-        """Send alert message to operator group."""
+        """Send alert as reply to the original chat box in operator group."""
         duration = "Belum ditindak lanjuti"
         if ticket.created_at:
             from datetime import datetime
-
             delta = datetime.utcnow() - ticket.created_at
             hours = delta.seconds // 3600
             minutes = (delta.seconds % 3600) // 60
@@ -51,17 +50,24 @@ class AlertService:
             f"📋 *Order ID:* `{ticket.order_id or '-'}`. \n"
             f"⏰ *Terdaftar:* {ticket.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
             f"⏳ *Durasi:* {duration}\n"
-            f"📍 *Grup:* {ticket.source_chat_title or 'Unknown'}\n"
-            f"👤 *Pelapor:* {ticket.reporter_name}\n"
-            f"📝 *Isi:* {ticket.content_text[:200] if ticket.content_text else '[Media]'}...\n\n"
             f"⚠️ Alert ke-{ticket.alert_count + 1}"
         )
 
-        await self.bot.send_message(
-            chat_id=config.OPERATOR_GROUP_ID,
-            text=alert_text,
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        # Send as reply to original chat box (thread)
+        if ticket.operator_message_id:
+            await self.bot.send_message(
+                chat_id=config.OPERATOR_GROUP_ID,
+                text=alert_text,
+                reply_to_message_id=ticket.operator_message_id,
+                parse_mode=ParseMode.MARKDOWN,
+            )
+        else:
+            # Fallback: send as new message if no chat box reference
+            await self.bot.send_message(
+                chat_id=config.OPERATOR_GROUP_ID,
+                text=alert_text,
+                parse_mode=ParseMode.MARKDOWN,
+            )
 
         await service.mark_alert_sent(ticket.id)
         logger.info("Alert sent for ticket %s", ticket.ticket_number)
