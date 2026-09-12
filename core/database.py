@@ -24,8 +24,9 @@ Base = declarative_base()
 
 
 async def init_db() -> None:
-    """Create all tables if they do not exist."""
+    """Create all tables (drop existing first to handle schema changes)."""
     async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
 
 
