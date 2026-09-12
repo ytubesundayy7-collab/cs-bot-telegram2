@@ -1,6 +1,6 @@
 """SQLAlchemy models for the ticket system."""
 from datetime import datetime
-from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Enum
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Enum, ForeignKey
 from sqlalchemy.orm import relationship
 from core.database import Base
 import enum
@@ -77,7 +77,7 @@ class TicketMessage(Base):
     __tablename__ = "ticket_messages"
 
     id = Column(Integer, primary_key=True, index=True)
-    ticket_id = Column(Integer, nullable=False)
+    ticket_id = Column(Integer, ForeignKey("tickets.id"), nullable=False)
     direction = Column(String(20), nullable=False)
     chat_id = Column(BigInteger, nullable=False)
     message_id = Column(BigInteger, nullable=False)
