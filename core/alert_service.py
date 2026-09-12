@@ -1,6 +1,6 @@
 """Background alert service for pending tickets."""
 import logging
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.database import AsyncSessionLocal
@@ -35,7 +35,7 @@ class AlertService:
                     )
 
     async def _send_alert(self, ticket, service: TicketService) -> None:
-        """Send alert as reply to the original chat box in operator group."""
+        """Send alert with action buttons as reply to the original chat box."""
         duration = "Belum ditindak lanjuti"
         if ticket.created_at:
             from datetime import datetime
@@ -45,13 +45,40 @@ class AlertService:
             duration = f"{hours}j {minutes}m"
 
         alert_text = (
-            "🔔 *ALERT: TIKET MENUNGGU*\n\n"
-            f"🎫 *Tiket:* `{ticket.ticket_number}`\n"
-            f"📋 *Order ID:* `{ticket.order_id or '-'}`. \n"
-            f"⏰ *Terdaftar:* {ticket.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-            f"⏳ *Durasi:* {duration}\n"
+            "🔔 *ALERT: TIKET MENUNGGU*
+
+"
+            f"🎫 *Tiket:* `{ticket.ticket_number}`
+"
+            f"📋 *Order ID:* `{ticket.order_id or '-'}`. 
+"
+            f"⏰ *Terdaftar:* {ticket.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC
+"
+            f"⏳ *Durasi:* {duration}
+"
             f"⚠️ Alert ke-{ticket.alert_count + 1}"
         )
+
+        # Build action buttons for alert
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    "✅ Selesai", callback_data=f"status:resolved:{ticket.id}"
+                ),
+                InlineKeyboardButton(
+                    "⏳ Pending", callback_data=f"status:pending:{ticket.id}"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
+                    "🔧 Proses", callback_data=f"status:in_progress:{ticket.id}"
+                ),
+                InlineKeyboardButton(
+                    "🛑 Abort Alert", callback_data=f"status:closed:{ticket.id}"
+                ),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
         # Send as reply to original chat box (thread)
         if ticket.operator_message_id:
@@ -59,13 +86,14 @@ class AlertService:
                 chat_id=config.OPERATOR_GROUP_ID,
                 text=alert_text,
                 reply_to_message_id=ticket.operator_message_id,
+                reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN,
             )
         else:
-            # Fallback: send as new message if no chat box reference
             await self.bot.send_message(
                 chat_id=config.OPERATOR_GROUP_ID,
                 text=alert_text,
+                reply_markup=reply_markup,
                 parse_mode=ParseMode.MARKDOWN,
             )
 

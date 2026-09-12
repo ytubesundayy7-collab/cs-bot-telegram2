@@ -42,7 +42,7 @@ def is_valid_order_id(text: str) -> bool:
     if brand_code not in BRAND_CODES:
         return False
 
-    # Sisanya harus mengandung angka (untuk membedakan dari kata biasa)
+    # Sisanya harus mengandung angka
     remaining = text[5:]
     if not remaining or not any(c.isdigit() for c in remaining):
         return False
@@ -58,7 +58,6 @@ def extract_valid_order_ids(text: str) -> list[str]:
     if not text:
         return []
 
-    # Split by whitespace dan cari token yang valid
     import re
     tokens = re.findall(r"[A-Za-z0-9-]+", text)
 

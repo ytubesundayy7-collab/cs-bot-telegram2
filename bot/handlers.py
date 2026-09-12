@@ -18,13 +18,23 @@ async def start_command(update, context):
     if update.effective_chat.type != "private":
         return
     text = (
-        "👋 *Halo!*\n\n"
-        "Saya adalah bot *Customer Service*.\n\n"
-        "📋 *Cara penggunaan:*\n"
-        "1. Tambahkan saya ke grup pelanggan\n"
-        "2. Tambahkan saya ke grup operator\n"
-        "3. Jadikan saya admin di kedua grup\n"
-        "4. Matikan *Privacy Mode* via @BotFather\n\n"
+        "👋 *Halo!*
+
+"
+        "Saya adalah bot *Customer Service*.
+
+"
+        "📋 *Cara penggunaan:*
+"
+        "1. Tambahkan saya ke grup pelanggan
+"
+        "2. Tambahkan saya ke grup operator
+"
+        "3. Jadikan saya admin di kedua grup
+"
+        "4. Matikan *Privacy Mode* via @BotFather
+
+"
         "Saya hanya akan merespon aduan yang mengandung *Order ID* / *Nomor Referensi*."
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
@@ -32,14 +42,26 @@ async def start_command(update, context):
 
 async def help_command(update, context):
     text = (
-        "📖 *Panduan Bot*\n\n"
-        "*Untuk Pelanggan:*\n"
-        "• Sertakan Order ID / Nomor Referensi saat mengirim aduan\n"
-        "• Bot akan otomatis membuat tiket dan membalas\n\n"
-        "*Untuk Operator:*\n"
-        "• `/broadcast [pesan]` - Kirim pesan ke semua grup aduan\n"
-        "• `/stats` - Lihat statistik tiket\n"
-        "• Klik tombol status untuk update progress\n"
+        "📖 *Panduan Bot*
+
+"
+        "*Untuk Pelanggan:*
+"
+        "• Sertakan Order ID / Nomor Referensi saat mengirim aduan
+"
+        "• Bot akan otomatis membuat tiket dan membalas
+
+"
+        "*Untuk Operator:*
+"
+        "• `/broadcast [pesan]` - Kirim pesan ke semua grup aduan
+"
+        "• `/cancel [nomor_tiket]` - Force cancel tiket
+"
+        "• `/stats` - Lihat statistik tiket
+"
+        "• Klik tombol status untuk update progress
+"
         "• Reply chat box untuk membalas ke pelanggan"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
@@ -50,10 +72,15 @@ async def stats_command(update, context):
         service = TicketService(session)
         stats = await service.get_ticket_stats()
     text = (
-        "📊 *Statistik Tiket*\n\n"
-        "🎫 Total: `" + str(stats['total']) + "`\n"
-        "🟢 Open: `" + str(stats['open']) + "`\n"
-        "🟡 Pending: `" + str(stats['pending']) + "`\n"
+        "📊 *Statistik Tiket*
+
+"
+        "🎫 Total: `" + str(stats['total']) + "`
+"
+        "🟢 Open: `" + str(stats['open']) + "`
+"
+        "🟡 Pending: `" + str(stats['pending']) + "`
+"
         "✅ Resolved: `" + str(stats['resolved']) + "`"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
@@ -62,12 +89,69 @@ async def stats_command(update, context):
 async def chatid_command(update, context):
     chat = update.effective_chat
     text = (
-        "📍 *Info Chat*\n\n"
-        "• Nama: `" + str(chat.title or chat.full_name) + "`\n"
-        "• Type: `" + str(chat.type) + "`\n"
+        "📍 *Info Chat*
+
+"
+        "• Nama: `" + str(chat.title or chat.full_name) + "`
+"
+        "• Type: `" + str(chat.type) + "`
+"
         "• Chat ID: `" + str(chat.id) + "`"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+
+async def broadcast_command(update, context):
+    chat = update.effective_chat
+    user = update.effective_user
+    if chat.id != config.OPERATOR_GROUP_ID:
+        return
+    message_text = update.message.text or ""
+    parts = message_text.split(" ", 1)
+    if len(parts) < 2 or not parts[1].strip():
+        await update.message.reply_text(
+            "❌ Format salah. Gunakan: `/broadcast [pesan yang ingin dikirim]`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+    broadcast_text = parts[1].strip()
+    async with AsyncSessionLocal() as session:
+        service = TicketService(session)
+        source_groups = await service.get_unique_source_groups()
+    if not source_groups:
+        await update.message.reply_text("❌ Belum ada grup aduan yang tercatat.")
+        return
+    sent_count = 0
+    failed_count = 0
+    for group_id in source_groups:
+        try:
+            await context.bot.send_message(
+                chat_id=group_id,
+                text=(
+                    "📢 *PENGUMUMAN DARI OPERATOR*
+
+"
+                    + broadcast_text + "
+
+"
+                    + "_Dikirim oleh: " + user.full_name + "_"
+                ),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            sent_count += 1
+        except Exception as e:
+            logger.warning("Failed to broadcast to %s: %s", group_id, e)
+            failed_count += 1
+    await update.message.reply_text(
+        (
+            "✅ *Broadcast selesai!*
+"
+            "📤 Terkirim: `" + str(sent_count) + "` grup
+"
+            "❌ Gagal: `" + str(failed_count) + "` grup"
+        ),
+        parse_mode=ParseMode.MARKDOWN,
+    )
 
 
 async def cancel_command(update, context):
@@ -79,17 +163,17 @@ async def cancel_command(update, context):
     chat = update.effective_chat
     user = update.effective_user
 
-    # Only allow in operator group
     if chat.id != config.OPERATOR_GROUP_ID:
         return
 
-    # Extract ticket number
     message_text = update.message.text or ""
     parts = message_text.split(" ", 1)
 
     if len(parts) < 2 or not parts[1].strip():
         await update.message.reply_text(
-            "❌ Format salah. Gunakan: `/cancel [nomor_tiket]`\n\n"
+            "❌ Format salah. Gunakan: `/cancel [nomor_tiket]`
+
+"
             "Contoh: `/cancel TIX-20260912-0001`",
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -113,10 +197,16 @@ async def cancel_command(update, context):
         await context.bot.send_message(
             chat_id=ticket.source_chat_id,
             text=(
-                "🛑 *Tiket Anda telah DITUTUP oleh Operator*\n\n"
-                "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
-                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
-                "👤 *Oleh:* " + user.full_name + "\n\n"
+                "🛑 *Tiket Anda telah DITUTUP oleh Operator*
+
+"
+                "🎫 *Tiket:* `" + ticket.ticket_number + "`
+"
+                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. 
+"
+                "👤 *Oleh:* " + user.full_name + "
+
+"
                 "_Jika masih ada kendala, silakan buat aduan baru dengan Order ID._"
             ),
             parse_mode=ParseMode.MARKDOWN,
@@ -127,11 +217,18 @@ async def cancel_command(update, context):
 
     await update.message.reply_text(
         (
-            "🛑 *Tiket berhasil di-CANCEL!*\n\n"
-            "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
-            "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
-            "📌 *Status:* CLOSED\n"
-            "👤 *Oleh:* " + user.full_name + "\n\n"
+            "🛑 *Tiket berhasil di-CANCEL!*
+
+"
+            "🎫 *Tiket:* `" + ticket.ticket_number + "`
+"
+            "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. 
+"
+            "📌 *Status:* CLOSED
+"
+            "👤 *Oleh:* " + user.full_name + "
+
+"
             "✅ Alert untuk tiket ini sudah **dihentikan permanen**."
         ),
         parse_mode=ParseMode.MARKDOWN,
@@ -203,9 +300,13 @@ async def handle_source_message(update, context):
             await context.bot.send_message(
                 chat_id=chat.id,
                 text=(
-                    config.AUTO_REPLY_TEXT + "\n\n"
-                    "🎫 *No. Tiket:* `" + ticket.ticket_number + "`\n"
-                    "📂 *Kategori:* `" + category + "`\n"
+                    config.AUTO_REPLY_TEXT + "
+
+"
+                    "🎫 *No. Tiket:* `" + ticket.ticket_number + "`
+"
+                    "📂 *Kategori:* `" + category + "`
+"
                     "📋 *Order ID:* `" + order_id_str + "`"
                 ),
                 parse_mode=ParseMode.MARKDOWN,
@@ -230,20 +331,28 @@ async def handle_source_message(update, context):
         else:
             order_lines = ""
             for oid in order_ids:
-                order_lines += "  • `" + oid + "`\n"
-            order_display = "\n" + order_lines.strip()
+                order_lines += "  • `" + oid + "`
+"
+            order_display = "
+" + order_lines.strip()
 
         chat_box = (
-            "🎫 *" + ticket.ticket_number + "* | 📂 *" + category + "*\n"
-            "📋 *Order ID (" + str(len(order_ids)) + " " + category + "):* " + order_display + "\n"
-            "📍 *Grup:* " + (chat.title or "Unknown") + " | 👤 *Pelapor:* " + user_mention + "\n"
-            "🆔 *User ID:* `" + str(user.id) + "` | ⏰ *" + ticket.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC*\n"
-            "📎 *Jenis:* " + content_type.upper() + "\n"
+            "🎫 *" + ticket.ticket_number + "* | 📂 *" + category + "*
+"
+            "📋 *Order ID (" + str(len(order_ids)) + " " + category + "):* " + order_display + "
+"
+            "📍 *Grup:* " + (chat.title or "Unknown") + " | 👤 *Pelapor:* " + user_mention + "
+"
+            "🆔 *User ID:* `" + str(user.id) + "` | ⏰ *" + ticket.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC*
+"
+            "📎 *Jenis:* " + content_type.upper() + "
+"
             "📝 *Isi:* " + content_preview
         )
 
         if group_link:
-            chat_box += "\n🔗 [Lihat Pesan Asli](" + group_link + ")"
+            chat_box += "
+🔗 [Lihat Pesan Asli](" + group_link + ")"
 
         try:
             keyboard = [
@@ -309,10 +418,15 @@ async def handle_operator_reply(update, context):
             sent = await context.bot.send_message(
                 chat_id=ticket.source_chat_id,
                 text=(
-                    "📨 *Balasan Operator*\n"
-                    "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
-                    "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
-                    "👤 *Operator:* " + operator_mention + "\n\n"
+                    "📨 *Balasan Operator*
+"
+                    "🎫 *Tiket:* `" + ticket.ticket_number + "`
+"
+                    "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. 
+"
+                    "👤 *Operator:* " + operator_mention + "
+
+"
                     + message.text
                 ),
                 parse_mode=ParseMode.MARKDOWN,
@@ -320,16 +434,21 @@ async def handle_operator_reply(update, context):
             )
         else:
             caption = (
-                "📨 *Balasan Operator*\n"
-                "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
-                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
+                "📨 *Balasan Operator*
+"
+                "🎫 *Tiket:* `" + ticket.ticket_number + "`
+"
+                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. 
+"
                 "👤 *Operator:* " + operator_mention
             )
             if message.photo:
                 sent = await context.bot.send_photo(
                     chat_id=ticket.source_chat_id,
                     photo=message.photo[-1].file_id,
-                    caption=caption + ("\n\n" + message.caption if message.caption else ""),
+                    caption=caption + ("
+
+" + message.caption if message.caption else ""),
                     parse_mode=ParseMode.MARKDOWN,
                     reply_to_message_id=ticket.source_message_id,
                 )
@@ -337,14 +456,18 @@ async def handle_operator_reply(update, context):
                 sent = await context.bot.send_document(
                     chat_id=ticket.source_chat_id,
                     document=message.document.file_id,
-                    caption=caption + ("\n\n" + message.caption if message.caption else ""),
+                    caption=caption + ("
+
+" + message.caption if message.caption else ""),
                     parse_mode=ParseMode.MARKDOWN,
                     reply_to_message_id=ticket.source_message_id,
                 )
             else:
                 sent = await context.bot.send_message(
                     chat_id=ticket.source_chat_id,
-                    text=caption + "\n\n[Media tidak didukung]",
+                    text=caption + "
+
+[Media tidak didukung]",
                     parse_mode=ParseMode.MARKDOWN,
                     reply_to_message_id=ticket.source_message_id,
                 )
@@ -363,7 +486,8 @@ async def handle_operator_reply(update, context):
             )
 
         await message.reply_text(
-            "✅ Balasan terkirim!\n🎫 `" + ticket.ticket_number + "` | 📋 `" + (ticket.order_id or "-") + "`. ",
+            "✅ Balasan terkirim!
+🎫 `" + ticket.ticket_number + "` | 📋 `" + (ticket.order_id or "-") + "`. ",
             parse_mode=ParseMode.MARKDOWN,
         )
 
@@ -389,6 +513,7 @@ async def callback_handler(update, context):
             "resolved": TicketStatus.RESOLVED,
             "pending": TicketStatus.PENDING,
             "in_progress": TicketStatus.IN_PROGRESS,
+            "closed": TicketStatus.CLOSED,
         }
         new_status = status_map.get(status_str)
         if not new_status:
@@ -406,16 +531,25 @@ async def callback_handler(update, context):
             TicketStatus.RESOLVED: "✅",
             TicketStatus.PENDING: "⏳",
             TicketStatus.IN_PROGRESS: "🔧",
+            TicketStatus.CLOSED: "🛑",
         }
 
         updated_text = (
-            status_emoji[new_status] + " *" + ticket.ticket_number + "* | 📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
-            "📍 *Grup:* " + (ticket.source_chat_title or "Unknown") + " | 👤 *Pelapor:* " + ticket.reporter_name + "\n"
-            "🆔 *User ID:* `" + str(ticket.reporter_id) + "` | ⏰ *" + ticket.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC*\n"
-            "📎 *Jenis:* " + ticket.content_type.upper() + "\n"
-            "📝 *Isi:* " + (ticket.content_text[:300] if ticket.content_text else "[Media]") + "...\n\n"
-            "📌 *Status:* " + new_status.value.upper() + "\n"
-            "👤 *Diupdate oleh:* " + user.full_name + "\n"
+            status_emoji[new_status] + " *" + ticket.ticket_number + "* | 📋 *Order ID:* `" + (ticket.order_id or "-") + "`. 
+"
+            "📍 *Grup:* " + (ticket.source_chat_title or "Unknown") + " | 👤 *Pelapor:* " + ticket.reporter_name + "
+"
+            "🆔 *User ID:* `" + str(ticket.reporter_id) + "` | ⏰ *" + ticket.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC*
+"
+            "📎 *Jenis:* " + ticket.content_type.upper() + "
+"
+            "📝 *Isi:* " + (ticket.content_text[:300] if ticket.content_text else "[Media]") + "...
+
+"
+            "📌 *Status:* " + new_status.value.upper() + "
+"
+            "👤 *Diupdate oleh:* " + user.full_name + "
+"
             "⏰ *" + datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S') + " UTC*"
         )
 
@@ -442,12 +576,16 @@ async def callback_handler(update, context):
                 TicketStatus.RESOLVED: "✅ *Tiket Anda telah DISELESAIKAN*",
                 TicketStatus.PENDING: "⏳ *Tiket Anda sedang MENUNGGU*",
                 TicketStatus.IN_PROGRESS: "🔧 *Tiket Anda sedang DITANGANI*",
+                TicketStatus.CLOSED: "🛑 *Tiket Anda telah DITUTUP* — Alert dihentikan",
             }
             await context.bot.send_message(
                 chat_id=ticket.source_chat_id,
                 text=(
-                    status_text[new_status] + "\n\n"
-                    "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
+                    status_text[new_status] + "
+
+"
+                    "🎫 *Tiket:* `" + ticket.ticket_number + "`
+"
                     "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. "
                 ),
                 parse_mode=ParseMode.MARKDOWN,
@@ -474,16 +612,27 @@ async def callback_handler(update, context):
             duration = str(hours) + "j " + str(minutes) + "m"
 
         info_text = (
-            "📋 *Detail Tiket*\n\n"
-            "🎫 *No:* `" + ticket.ticket_number + "`\n"
-            "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
-            "📌 *Status:* " + ticket.status.value.upper() + "\n"
-            "🔥 *Priority:* " + ticket.priority.value.upper() + "\n"
-            "📍 *Grup:* " + (ticket.source_chat_title or "Unknown") + "\n"
-            "👤 *Pelapor:* " + ticket.reporter_name + "\n"
-            "🆔 *User ID:* `" + str(ticket.reporter_id) + "`\n"
-            "⏰ *Dibuat:* " + ticket.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC\n"
-            "⏳ *Durasi:* " + duration + "\n"
+            "📋 *Detail Tiket*
+
+"
+            "🎫 *No:* `" + ticket.ticket_number + "`
+"
+            "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. 
+"
+            "📌 *Status:* " + ticket.status.value.upper() + "
+"
+            "🔥 *Priority:* " + ticket.priority.value.upper() + "
+"
+            "📍 *Grup:* " + (ticket.source_chat_title or "Unknown") + "
+"
+            "👤 *Pelapor:* " + ticket.reporter_name + "
+"
+            "🆔 *User ID:* `" + str(ticket.reporter_id) + "`
+"
+            "⏰ *Dibuat:* " + ticket.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC
+"
+            "⏳ *Durasi:* " + duration + "
+"
             "🔔 *Alert:* " + str(ticket.alert_count) + "x"
         )
 

@@ -35,15 +35,9 @@ class Config:
         os.getenv("PENDING_ALERT_THRESHOLD_MINUTES", "15")
     )
 
-    # Auto-reply message when ticket is created
     AUTO_REPLY_TEXT: str = os.getenv(
         "AUTO_REPLY_TEXT",
         "Baik, mohon ditunggu. Tim kami sedang mengecek transaksi Anda.",
-    )
-
-    # Minimum length for Order ID detection
-    ORDER_ID_MIN_LENGTH: int = int(
-        os.getenv("ORDER_ID_MIN_LENGTH", "5")
     )
 
     @classmethod
