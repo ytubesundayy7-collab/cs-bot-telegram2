@@ -46,24 +46,14 @@ class AlertService:
             duration = f"{hours}j {minutes}m"
 
         alert_text = (
-            "🔔 *ALERT: TIKET MENUNGGU*
-
-"
-            f"🎫 *Tiket:* `{ticket.ticket_number}`
-"
-            f"📋 *Order ID:* `{ticket.order_id or '-'}`. 
-"
-            f"⏰ *Terdaftar:* {ticket.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC
-"
-            f"⏳ *Durasi:* {duration}
-"
-            f"📍 *Grup:* {ticket.source_chat_title or 'Unknown'}
-"
-            f"👤 *Pelapor:* {ticket.reporter_name}
-"
-            f"📝 *Isi:* {ticket.content_text[:200] if ticket.content_text else '[Media]'}...
-
-"
+            "🔔 *ALERT: TIKET MENUNGGU*\n\n"
+            f"🎫 *Tiket:* `{ticket.ticket_number}`\n"
+            f"📋 *Order ID:* `{ticket.order_id or '-'}`. \n"
+            f"⏰ *Terdaftar:* {ticket.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+            f"⏳ *Durasi:* {duration}\n"
+            f"📍 *Grup:* {ticket.source_chat_title or 'Unknown'}\n"
+            f"👤 *Pelapor:* {ticket.reporter_name}\n"
+            f"📝 *Isi:* {ticket.content_text[:200] if ticket.content_text else '[Media]'}...\n\n"
             f"⚠️ Alert ke-{ticket.alert_count + 1}"
         )
 
