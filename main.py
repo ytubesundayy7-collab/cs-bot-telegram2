@@ -15,6 +15,7 @@ from bot.handlers import (
     help_command,
     stats_command,
     chatid_command,
+    broadcast_command,
     handle_source_message,
     handle_operator_reply,
     callback_handler,
@@ -23,7 +24,6 @@ from bot.handlers import (
 from core.database import init_db
 from core.alert_service import AlertService
 
-# Setup logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -33,16 +33,19 @@ logger = logging.getLogger(__name__)
 
 def setup_handlers(application: Application) -> None:
     """Register all handlers."""
-    # Commands
+    # Commands (available everywhere)
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("chatid", chatid_command))
+    application.add_handler(CommandHandler("broadcast", broadcast_command))
 
-    # Operator replies (must be before general group handler)
+    # Operator replies (only in operator group, must be reply)
     application.add_handler(
         MessageHandler(
-            filters.REPLY & filters.Chat(chat_id=config.OPERATOR_GROUP_ID) & ~filters.COMMAND,
+            filters.REPLY
+            & filters.Chat(chat_id=config.OPERATOR_GROUP_ID)
+            & ~filters.COMMAND,
             handle_operator_reply,
         )
     )
@@ -66,15 +69,17 @@ def setup_jobs(application: Application) -> None:
     """Setup background jobs (alerts)."""
     alert_service = AlertService(application.bot)
 
-    # Run alert check every X minutes
     application.job_queue.run_repeating(
         callback=lambda ctx: alert_service.check_and_alert(),
         interval=config.ALERT_INTERVAL_MINUTES * 60,
-        first=60,  # First run after 1 minute
+        first=60,
         name="pending_ticket_alert",
     )
 
-    logger.info(f"Alert job scheduled every {config.ALERT_INTERVAL_MINUTES} minutes")
+    logger.info(
+        "Alert job scheduled every %s minutes",
+        config.ALERT_INTERVAL_MINUTES,
+    )
 
 
 async def post_init(application: Application) -> None:
@@ -91,7 +96,6 @@ def main() -> None:
     """Main entry point."""
     config.validate()
 
-    # Build application
     application = (
         Application.builder()
         .token(config.BOT_TOKEN)
@@ -101,19 +105,18 @@ def main() -> None:
 
     setup_handlers(application)
 
-    # Render.com specific settings
     port = int(os.getenv("PORT", "10000"))
     webhook_url = os.getenv("WEBHOOK_URL", "")
 
     if not webhook_url:
-        logger.error("WEBHOOK_URL environment variable is required for Render deployment!")
-        logger.error("Please set WEBHOOK_URL in Render dashboard Environment settings.")
+        logger.error(
+            "WEBHOOK_URL environment variable is required for Render deployment!"
+        )
         return
 
-    logger.info(f"Starting webhook on port {port}")
-    logger.info(f"Webhook URL: {webhook_url}")
+    logger.info("Starting webhook on port %s", port)
+    logger.info("Webhook URL: %s", webhook_url)
 
-    # Start webhook (production mode for Render)
     application.run_webhook(
         listen="0.0.0.0",
         port=port,

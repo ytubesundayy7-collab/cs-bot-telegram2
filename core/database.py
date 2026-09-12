@@ -1,16 +1,18 @@
 """Database connection and session management."""
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    create_async_engine,
+    AsyncSession,
+    async_sessionmaker,
+)
 from sqlalchemy.orm import declarative_base
 from bot.config import config
 
-# Create async engine
 engine = create_async_engine(
     config.DATABASE_URL,
     echo=False,
     future=True,
 )
 
-# Session factory
 AsyncSessionLocal = async_sessionmaker(
     engine,
     class_=AsyncSession,
