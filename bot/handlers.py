@@ -70,50 +70,75 @@ async def chatid_command(update, context):
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
 
-async def broadcast_command(update, context):
+async def cancel_command(update, context):
+    """
+    Handle /cancel in operator group.
+    Force close/cancel a ticket by ticket number.
+    Usage: /cancel TIX-20260912-0001
+    """
     chat = update.effective_chat
     user = update.effective_user
+
+    # Only allow in operator group
     if chat.id != config.OPERATOR_GROUP_ID:
         return
+
+    # Extract ticket number
     message_text = update.message.text or ""
     parts = message_text.split(" ", 1)
+
     if len(parts) < 2 or not parts[1].strip():
         await update.message.reply_text(
-            "❌ Format salah. Gunakan: `/broadcast [pesan yang ingin dikirim]`",
+            "❌ Format salah. Gunakan: `/cancel [nomor_tiket]`\n\n"
+            "Contoh: `/cancel TIX-20260912-0001`",
             parse_mode=ParseMode.MARKDOWN,
         )
         return
-    broadcast_text = parts[1].strip()
+
+    ticket_number = parts[1].strip().upper()
+
     async with AsyncSessionLocal() as session:
         service = TicketService(session)
-        source_groups = await service.get_unique_source_groups()
-    if not source_groups:
-        await update.message.reply_text("❌ Belum ada grup aduan yang tercatat.")
+        ticket = await service.force_close_ticket(ticket_number)
+
+    if not ticket:
+        await update.message.reply_text(
+            "❌ Tiket `" + ticket_number + "` tidak ditemukan.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
         return
-    sent_count = 0
-    failed_count = 0
-    for group_id in source_groups:
-        try:
-            await context.bot.send_message(
-                chat_id=group_id,
-                text=(
-                    "📢 *PENGUMUMAN DARI OPERATOR*\n\n"
-                    + broadcast_text + "\n\n"
-                    + "_Dikirim oleh: " + user.full_name + "_"
-                ),
-                parse_mode=ParseMode.MARKDOWN,
-            )
-            sent_count += 1
-        except Exception as e:
-            logger.warning("Failed to broadcast to %s: %s", group_id, e)
-            failed_count += 1
+
+    # Notify source group
+    try:
+        await context.bot.send_message(
+            chat_id=ticket.source_chat_id,
+            text=(
+                "🛑 *Tiket Anda telah DITUTUP oleh Operator*\n\n"
+                "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
+                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
+                "👤 *Oleh:* " + user.full_name + "\n\n"
+                "_Jika masih ada kendala, silakan buat aduan baru dengan Order ID._"
+            ),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_to_message_id=ticket.source_message_id,
+        )
+    except Exception as e:
+        logger.warning("Could not notify source group: %s", e)
+
     await update.message.reply_text(
         (
-            "✅ *Broadcast selesai!*\n"
-            "📤 Terkirim: `" + str(sent_count) + "` grup\n"
-            "❌ Gagal: `" + str(failed_count) + "` grup"
+            "🛑 *Tiket berhasil di-CANCEL!*\n\n"
+            "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
+            "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
+            "📌 *Status:* CLOSED\n"
+            "👤 *Oleh:* " + user.full_name + "\n\n"
+            "✅ Alert untuk tiket ini sudah **dihentikan permanen**."
         ),
         parse_mode=ParseMode.MARKDOWN,
+    )
+
+    logger.info(
+        "Ticket %s force closed by %s", ticket.ticket_number, user.full_name
     )
 
 
