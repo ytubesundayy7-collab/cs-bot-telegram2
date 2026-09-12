@@ -29,10 +29,10 @@ class Config:
     WEBHOOK_URL: str = os.getenv("WEBHOOK_URL", "")
 
     ALERT_INTERVAL_MINUTES: int = int(
-        os.getenv("ALERT_INTERVAL_MINUTES", "30")
+        os.getenv("ALERT_INTERVAL_MINUTES", "15")
     )
     PENDING_ALERT_THRESHOLD_MINUTES: int = int(
-        os.getenv("PENDING_ALERT_THRESHOLD_MINUTES", "60")
+        os.getenv("PENDING_ALERT_THRESHOLD_MINUTES", "15")
     )
 
     # Auto-reply message when ticket is created
