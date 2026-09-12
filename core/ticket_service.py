@@ -12,26 +12,48 @@ class TicketService:
         self.session = session
 
     @staticmethod
-    def extract_order_id(text: str, min_length: int = 5) -> Optional[str]:
+    def extract_all_order_ids(text: str, min_length: int = 5) -> list[str]:
         """
-        Extract Order ID / Partner Ref ID from text.
-        Looks for alphanumeric tokens with at least min_length chars
-        that contain at least one digit.
+        Extract ALL Order IDs / Partner Ref IDs from text.
         """
         if not text:
-            return None
+            return []
 
-        # Pattern: alphanumeric token (including hyphen) with min_length
-        # Hyphen placed at end of character class so no escaping needed
         pattern = "[A-Za-z0-9-]{" + str(min_length) + ",}"
         matches = re.findall(pattern, text)
 
-        for match in matches:
-            # Must contain at least 1 digit to be considered an order ID
-            if any(c.isdigit() for c in match):
-                return match
+        return [m for m in matches if any(c.isdigit() for c in m)]
 
-        return None
+    @staticmethod
+    def get_category_from_order_id(order_id: str) -> str:
+        """
+        Determine transaction category from Order ID prefix.
+        DP = Deposit, WD = Withdraw, ST = Settlement
+        """
+        if not order_id or len(order_id) < 2:
+            return "UNKNOWN"
+
+        prefix = order_id[:2].upper()
+        categories = {
+            "DP": "DEPOSIT",
+            "WD": "WITHDRAW",
+            "ST": "SETTLEMENT",
+        }
+        return categories.get(prefix, "UNKNOWN")
+
+    @staticmethod
+    def group_order_ids_by_category(order_ids: list[str]) -> dict[str, list[str]]:
+        """
+        Group Order IDs by category.
+        Returns: {category: [order_id1, order_id2, ...]}
+        """
+        result = {}
+        for oid in order_ids:
+            cat = TicketService.get_category_from_order_id(oid)
+            if cat not in result:
+                result[cat] = []
+            result[cat].append(oid)
+        return result
 
     async def generate_ticket_number(self) -> str:
         """Generate ticket number format: TIX-YYYYMMDD-XXXX"""
@@ -81,7 +103,6 @@ class TicketService:
         await self.session.commit()
         await self.session.refresh(ticket)
 
-        # Log the initial message
         message = TicketMessage(
             ticket_id=ticket.id,
             direction="inbound",
