@@ -1,10 +1,10 @@
 """Business logic for ticket management."""
-import re
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import select, and_, or_, func, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.models import Ticket, TicketMessage, TicketStatus, TicketPriority
+from core.brands import extract_valid_order_ids, get_category_from_prefix
 
 
 class TicketService:
@@ -12,44 +12,17 @@ class TicketService:
         self.session = session
 
     @staticmethod
-    def extract_all_order_ids(text: str, min_length: int = 5) -> list[str]:
-        """
-        Extract ALL Order IDs / Partner Ref IDs from text.
-        """
-        if not text:
-            return []
-
-        pattern = "[A-Za-z0-9-]{" + str(min_length) + ",}"
-        matches = re.findall(pattern, text)
-
-        return [m for m in matches if any(c.isdigit() for c in m)]
-
-    @staticmethod
-    def get_category_from_order_id(order_id: str) -> str:
-        """
-        Determine transaction category from Order ID prefix.
-        DP = Deposit, WD = Withdraw, ST = Settlement
-        """
-        if not order_id or len(order_id) < 2:
-            return "UNKNOWN"
-
-        prefix = order_id[:2].upper()
-        categories = {
-            "DP": "DEPOSIT",
-            "WD": "WITHDRAW",
-            "ST": "SETTLEMENT",
-        }
-        return categories.get(prefix, "UNKNOWN")
+    def extract_all_order_ids(text: str) -> list[str]:
+        """Extract ALL valid Order IDs from text (strict brand validation)."""
+        return extract_valid_order_ids(text)
 
     @staticmethod
     def group_order_ids_by_category(order_ids: list[str]) -> dict[str, list[str]]:
-        """
-        Group Order IDs by category.
-        Returns: {category: [order_id1, order_id2, ...]}
-        """
+        """Group Order IDs by category (DEPOSIT/WITHDRAW/SETTLEMENT)."""
         result = {}
         for oid in order_ids:
-            cat = TicketService.get_category_from_order_id(oid)
+            prefix = oid[:2].upper()
+            cat = get_category_from_prefix(prefix)
             if cat not in result:
                 result[cat] = []
             result[cat].append(oid)
