@@ -40,7 +40,7 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("chatid", chatid_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
-
+    application.add_handler(CommandHandler("cancel", cancel_command))
     # Operator replies (only in operator group, must be reply)
     application.add_handler(
         MessageHandler(
