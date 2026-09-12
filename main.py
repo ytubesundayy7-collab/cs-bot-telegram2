@@ -16,6 +16,7 @@ from bot.handlers import (
     stats_command,
     chatid_command,
     broadcast_command,
+    cancel_command,
     handle_source_message,
     handle_operator_reply,
     callback_handler,
