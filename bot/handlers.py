@@ -157,7 +157,8 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def handle_source_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Handle incoming messages from source groups (customer groups).
-    ONLY processes messages containing an Order ID.
+n    ONLY processes messages containing Order ID(s).
+    Creates SEPARATE tickets per category (Deposit/Withdraw/Settlement).
     """
     message = update.effective_message
     chat = update.effective_chat
@@ -179,16 +180,21 @@ async def handle_source_message(update: Update, context: ContextTypes.DEFAULT_TY
     # Extract content
     content_text = message.text or message.caption or ""
 
-    # Check for Order ID
+    # Extract ALL Order IDs from the message
     async with AsyncSessionLocal() as session:
         service = TicketService(session)
-        order_id = service.extract_order_id(
+        all_order_ids = service.extract_all_order_ids(
             content_text, config.ORDER_ID_MIN_LENGTH
         )
 
-    if not order_id:
+    if not all_order_ids:
         # No Order ID found - ignore the message completely
         return
+
+    # Group Order IDs by category (DP=Deposit, WD=Withdraw, ST=Settlement)
+    async with AsyncSessionLocal() as session:
+        service = TicketService(session)
+        grouped = service.group_order_ids_by_category(all_order_ids)
 
     # Determine content type
     content_type = "text"
@@ -201,114 +207,129 @@ async def handle_source_message(update: Update, context: ContextTypes.DEFAULT_TY
     elif message.voice:
         content_type = "voice"
 
-    # Create ticket in database
-    async with AsyncSessionLocal() as session:
-        service = TicketService(session)
+    # Create 1 ticket PER CATEGORY
+    for category, order_ids in grouped.items():
+        # Join multiple Order IDs with " | "
+        order_id_str = " | ".join(order_ids)
 
-        ticket = await service.create_ticket(
-            source_chat_id=chat.id,
-            source_message_id=message.message_id,
-            source_chat_title=chat.title,
-            reporter_id=user.id,
-            reporter_name=user.full_name,
-            reporter_username=user.username,
-            content_text=content_text,
-            content_type=content_type,
-            order_id=order_id,
-        )
-
-    # Auto-reply to source group
-    try:
-        await context.bot.send_message(
-            chat_id=chat.id,
-            text=(
-                f"{config.AUTO_REPLY_TEXT}\n\n"
-                f"🎫 *No. Tiket:* `{ticket.ticket_number}`\n"
-                f"📋 *Order ID:* `{order_id}`"
-            ),
-            parse_mode=ParseMode.MARKDOWN,
-            reply_to_message_id=message.message_id,
-        )
-    except Exception as e:
-        logger.error("Failed to send auto-reply: %s", e)
-
-    # Build SINGLE chat box for operator group
-    user_mention = f"[{user.full_name}](tg://user?id={user.id})"
-    group_link = ""
-    if str(chat.id).startswith("-100"):
-        group_id_part = str(chat.id)[4:]
-        group_link = f"https://t.me/c/{group_id_part}/{message.message_id}"
-
-    # Format content preview
-    content_preview = content_text[:300] if content_text else "[Media tanpa teks]"
-    if len(content_text or "") > 300:
-        content_preview += "..."
-
-    # Build the single chat box message
-    chat_box = (
-        f"🎫 *{ticket.ticket_number}* | 📋 *Order ID:* `{order_id}`\n"
-        f"📍 *Grup:* {chat.title or 'Unknown'} | 👤 *Pelapor:* {user_mention}\n"
-        f"🆔 *User ID:* `{user.id}` | ⏰ *{ticket.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC*\n"
-        f"📎 *Jenis:* {content_type.upper()}\n"
-        f"📝 *Isi:* {content_preview}"
-    )
-
-    if group_link:
-        chat_box += f"\n🔗 [Lihat Pesan Asli]({group_link})"
-
-    try:
-        # Send chat box with action buttons to operator group
-        keyboard = [
-            [
-                InlineKeyboardButton(
-                    "✅ Selesai", callback_data=f"status:resolved:{ticket.id}"
-                ),
-                InlineKeyboardButton(
-                    "⏳ Pending", callback_data=f"status:pending:{ticket.id}"
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    "🔧 Proses", callback_data=f"status:in_progress:{ticket.id}"
-                ),
-                InlineKeyboardButton(
-                    "📋 Info", callback_data=f"info:{ticket.id}"
-                ),
-            ],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        operator_msg = await context.bot.send_message(
-            chat_id=config.OPERATOR_GROUP_ID,
-            text=chat_box,
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.MARKDOWN,
-            disable_web_page_preview=True,
-        )
-
-        # Store operator message reference
+        # Create ticket in database
         async with AsyncSessionLocal() as session:
             service = TicketService(session)
-            await service.update_operator_message(
-                ticket_id=ticket.id,
-                operator_chat_id=config.OPERATOR_GROUP_ID,
-                operator_message_id=operator_msg.message_id,
+
+            ticket = await service.create_ticket(
+                source_chat_id=chat.id,
+                source_message_id=message.message_id,
+                source_chat_title=chat.title,
+                reporter_id=user.id,
+                reporter_name=user.full_name,
+                reporter_username=user.username,
+                content_text=content_text,
+                content_type=content_type,
+                order_id=order_id_str,
             )
 
-        logger.info(
-            "Ticket %s | Order ID: %s | From: %s | Reporter: %s",
-            ticket.ticket_number,
-            order_id,
-            chat.title,
-            user.full_name,
+        # Auto-reply to source group (per category)
+        try:
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text=(
+                    f"{config.AUTO_REPLY_TEXT}\n\n"
+                    f"🎫 *No. Tiket:* `{ticket.ticket_number}`\n"
+                    f"📂 *Kategori:* `{category}`\n"
+                    f"📋 *Order ID:* `{order_id_str}`"
+                ),
+                parse_mode=ParseMode.MARKDOWN,
+                reply_to_message_id=message.message_id,
+            )
+        except Exception as e:
+            logger.error("Failed to send auto-reply: %s", e)
+
+        # Build SINGLE chat box for operator group (per category)
+        user_mention = f"[{user.full_name}](tg://user?id={user.id})"
+        group_link = ""
+        if str(chat.id).startswith("-100"):
+            group_id_part = str(chat.id)[4:]
+            group_link = f"https://t.me/c/{group_id_part}/{message.message_id}"
+
+        # Format content preview
+        content_preview = content_text[:300] if content_text else "[Media tanpa teks]"
+        if len(content_text or "") > 300:
+            content_preview += "..."
+
+        # Format Order IDs display
+        if len(order_ids) == 1:
+            order_display = f"`{order_ids[0]}`"
+        else:
+            order_lines = "\n".join(["  • `" + oid + "`" for oid in order_ids])
+            order_display = "\n" + order_lines
+
+        # Build the chat box message
+        chat_box = (
+            "🎫 *" + ticket.ticket_number + "* | 📂 *" + category + "*\n"
+            "📋 *Order ID (" + str(len(order_ids)) + " " + category + "):*" + order_display + "\n"
+            "📍 *Grup:* " + (chat.title or "Unknown") + " | 👤 *Pelapor:* " + user_mention + "\n"
+            "🆔 *User ID:* `" + str(user.id) + "` | ⏰ *" + ticket.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC*\n"
+            "📎 *Jenis:* " + content_type.upper() + "\n"
+            "📝 *Isi:* " + content_preview
         )
 
-    except Exception as e:
-        logger.error(
-            "Failed to send chat box for ticket %s: %s",
-            ticket.ticket_number,
-            e,
-        )
+        if group_link:
+            chat_box += "\n🔗 [Lihat Pesan Asli](" + group_link + ")"
+
+        try:
+            # Send chat box with action buttons to operator group
+            keyboard = [
+                [
+                    InlineKeyboardButton(
+                        "✅ Selesai", callback_data=f"status:resolved:{ticket.id}"
+                    ),
+                    InlineKeyboardButton(
+                        "⏳ Pending", callback_data=f"status:pending:{ticket.id}"
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔧 Proses", callback_data=f"status:in_progress:{ticket.id}"
+                    ),
+                    InlineKeyboardButton(
+                        "📋 Info", callback_data=f"info:{ticket.id}"
+                    ),
+                ],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            operator_msg = await context.bot.send_message(
+                chat_id=config.OPERATOR_GROUP_ID,
+                text=chat_box,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=True,
+            )
+
+            # Store operator message reference
+            async with AsyncSessionLocal() as session:
+                service = TicketService(session)
+                await service.update_operator_message(
+                    ticket_id=ticket.id,
+                    operator_chat_id=config.OPERATOR_GROUP_ID,
+                    operator_message_id=operator_msg.message_id,
+                )
+
+            logger.info(
+                "Ticket %s | Category: %s | Order IDs: %s | From: %s | Reporter: %s",
+                ticket.ticket_number,
+                category,
+                order_id_str,
+                chat.title,
+                user.full_name,
+            )
+
+        except Exception as e:
+            logger.error(
+                "Failed to send chat box for ticket %s: %s",
+                ticket.ticket_number,
+                e,
+            )
 
 
 # ==================== OPERATOR REPLY HANDLER ====================
