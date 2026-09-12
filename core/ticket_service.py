@@ -232,6 +232,19 @@ class TicketService:
             "resolved": resolved_count.scalar(),
         }
 
+        async def force_close_ticket(self, ticket_number: str) -> Optional[Ticket]:
+        """Force close a ticket by ticket number (for operator command)."""
+        ticket = await self.get_ticket_by_number(ticket_number)
+        if not ticket:
+            return None
+
+        ticket.status = TicketStatus.CLOSED
+        ticket.resolved_at = datetime.utcnow()
+        ticket.updated_at = datetime.utcnow()
+        await self.session.commit()
+        await self.session.refresh(ticket)
+        return ticket
+
     async def get_unique_source_groups(self) -> list[int]:
         """Get list of unique source chat IDs that have sent complaints."""
         result = await self.session.execute(
