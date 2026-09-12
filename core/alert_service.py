@@ -45,42 +45,34 @@ class AlertService:
             duration = f"{hours}j {minutes}m"
 
         alert_text = (
-            "🔔 *ALERT: TIKET MENUNGGU*
-
-"
-            f"🎫 *Tiket:* `{ticket.ticket_number}`
-"
-            f"📋 *Order ID:* `{ticket.order_id or '-'}`. 
-"
-            f"⏰ *Terdaftar:* {ticket.created_at.strftime('%Y-%m-%d %H:%M:%S')} UTC
-"
-            f"⏳ *Durasi:* {duration}
-"
-            f"⚠️ Alert ke-{ticket.alert_count + 1}"
+            "🔔 *ALERT: TIKET MENUNGGU*\n\n"
+            "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
+            "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
+            "⏰ *Terdaftar:* " + ticket.created_at.strftime('%Y-%m-%d %H:%M:%S') + " UTC\n"
+            "⏳ *Durasi:* " + duration + "\n"
+            "⚠️ Alert ke-" + str(ticket.alert_count + 1)
         )
 
-        # Build action buttons for alert
         keyboard = [
             [
                 InlineKeyboardButton(
-                    "✅ Selesai", callback_data=f"status:resolved:{ticket.id}"
+                    "✅ Selesai", callback_data="status:resolved:" + str(ticket.id)
                 ),
                 InlineKeyboardButton(
-                    "⏳ Pending", callback_data=f"status:pending:{ticket.id}"
+                    "⏳ Pending", callback_data="status:pending:" + str(ticket.id)
                 ),
             ],
             [
                 InlineKeyboardButton(
-                    "🔧 Proses", callback_data=f"status:in_progress:{ticket.id}"
+                    "🔧 Proses", callback_data="status:in_progress:" + str(ticket.id)
                 ),
                 InlineKeyboardButton(
-                    "🛑 Abort Alert", callback_data=f"status:closed:{ticket.id}"
+                    "🛑 Abort Alert", callback_data="status:closed:" + str(ticket.id)
                 ),
             ],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Send as reply to original chat box (thread)
         if ticket.operator_message_id:
             await self.bot.send_message(
                 chat_id=config.OPERATOR_GROUP_ID,
