@@ -245,6 +245,18 @@ class TicketService:
             "resolved": resolved_count.scalar(),
         }
 
+
+    async def get_tickets_today(self) -> list[Ticket]:
+        """Get all tickets created today (from 00:00 UTC)."""
+        from datetime import datetime
+        today_start = datetime.utcnow().replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        result = await self.session.execute(
+            select(Ticket).where(Ticket.created_at >= today_start)
+        )
+        return result.scalars().all()
+    
     async def get_unique_source_groups(self) -> list[int]:
         """Get list of unique source chat IDs that have sent complaints."""
         result = await self.session.execute(
