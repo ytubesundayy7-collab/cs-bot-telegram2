@@ -97,7 +97,7 @@ async def broadcast_command(update, context):
     broadcast_text = parts[1].strip()
     async with AsyncSessionLocal() as session:
         service = TicketService(session)
-        source_groups = await service.get_unique_source_groups()
+        source_groups = await service.get_all_source_groups()
     if not source_groups:
         await update.message.reply_text("❌ Belum ada grup aduan yang tercatat.")
         return
@@ -243,6 +243,11 @@ async def handle_source_message(update, context):
     async with AsyncSessionLocal() as session:
         service = TicketService(session)
         all_order_ids = service.extract_all_order_ids(content_text)
+
+    # Auto-register group even if no Order ID (for broadcast)
+    async with AsyncSessionLocal() as session:
+        service = TicketService(session)
+        await service.register_source_group(chat.id, chat.title)
 
     if not all_order_ids:
         return
