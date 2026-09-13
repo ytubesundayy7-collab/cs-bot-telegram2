@@ -186,6 +186,7 @@ async def handle_source_message(update, context):
 
     content_text = message.text or message.caption or ""
 
+    # Extract ALL valid Order IDs (strict brand validation)
     async with AsyncSessionLocal() as session:
         service = TicketService(session)
         all_order_ids = service.extract_all_order_ids(content_text)
@@ -193,10 +194,7 @@ async def handle_source_message(update, context):
     if not all_order_ids:
         return
 
-    async with AsyncSessionLocal() as session:
-        service = TicketService(session)
-        grouped = service.group_order_ids_by_category(all_order_ids)
-
+    # Determine content type
     content_type = "text"
     if message.photo:
         content_type = "photo"
@@ -207,8 +205,13 @@ async def handle_source_message(update, context):
     elif message.voice:
         content_type = "voice"
 
-    for category, order_ids in grouped.items():
-        order_id_str = " | ".join(order_ids)
+    created_tickets = []
+
+    # Create 1 ticket PER ORDER ID (independent)
+    for order_id in all_order_ids:
+        prefix = order_id[:2].upper()
+        cat_map = {"DP": "DEPOSIT", "WD": "WITHDRAW", "ST": "SETTLEMENT"}
+        category = cat_map.get(prefix, "UNKNOWN")
 
         async with AsyncSessionLocal() as session:
             service = TicketService(session)
@@ -221,23 +224,11 @@ async def handle_source_message(update, context):
                 reporter_username=user.username,
                 content_text=content_text,
                 content_type=content_type,
-                order_id=order_id_str,
+                order_id=order_id,
             )
+            created_tickets.append((ticket, category, order_id))
 
-        try:
-            await context.bot.send_message(
-                chat_id=chat.id,
-                text=config.AUTO_REPLY_TEXT + '''
-
-🎫 *No. Tiket:* `''' + ticket.ticket_number + '''`
-📂 *Kategori:* `''' + category + '''`
-📋 *Order ID:* `''' + order_id_str + '''`''',
-                parse_mode=ParseMode.MARKDOWN,
-                reply_to_message_id=message.message_id,
-            )
-        except Exception as e:
-            logger.error("Failed to send auto-reply: %s", e)
-
+        # Build chat box for SINGLE order id
         user_mention = "[" + user.full_name + "](tg://user?id=" + str(user.id) + ")"
         group_link = ""
         if str(chat.id).startswith("-100"):
@@ -248,16 +239,8 @@ async def handle_source_message(update, context):
         if len(content_text or "") > 300:
             content_preview += "..."
 
-        if len(order_ids) == 1:
-            order_display = "`" + order_ids[0] + "`"
-        else:
-            order_lines = ""
-            for oid in order_ids:
-                order_lines += "  • `" + oid + "`\n"
-            order_display = "\n" + order_lines.strip()
-
         chat_box = '''🎫 *''' + ticket.ticket_number + '''* | 📂 *''' + category + '''*
-📋 *Order ID (''' + str(len(order_ids)) + " " + category + ''')* ''' + order_display + '''
+📋 *Order ID:* `''' + order_id + '''`
 📍 *Grup:* ''' + (chat.title or "Unknown") + " | 👤 *Pelapor:* " + user_mention + '''
 🆔 *User ID:* `''' + str(user.id) + '''` | ⏰ *''' + ticket.created_at.strftime('%Y-%m-%d %H:%M:%S') + ''' UTC*
 📎 *Jenis:* ''' + content_type.upper() + '''
@@ -295,8 +278,42 @@ async def handle_source_message(update, context):
                     operator_message_id=operator_msg.message_id,
                 )
 
+            logger.info(
+                "Ticket %s | Order ID: %s | Category: %s | From: %s | Reporter: %s",
+                ticket.ticket_number,
+                order_id,
+                category,
+                chat.title,
+                user.full_name,
+            )
+
         except Exception as e:
-            logger.error("Failed to send chat box: %s", e)
+            logger.error(
+                "Failed to send chat box for ticket %s: %s",
+                ticket.ticket_number,
+                e,
+            )
+
+    # Auto-reply ONCE to source group with all tickets
+    if created_tickets:
+        reply_lines = [config.AUTO_REPLY_TEXT, ""]
+        for ticket, category, order_id in created_tickets:
+            reply_lines.append(
+                "🎫 *" + ticket.ticket_number + "* | 📂 *" + category + "*"
+            )
+            reply_lines.append("📋 *Order ID:* `" + order_id + "`")
+            reply_lines.append("")
+        reply_lines.append("_Tim kami sedang mengecek semua transaksi Anda._")
+
+        try:
+            await context.bot.send_message(
+                chat_id=chat.id,
+                text="\n".join(reply_lines),
+                parse_mode=ParseMode.MARKDOWN,
+                reply_to_message_id=message.message_id,
+            )
+        except Exception as e:
+            logger.error("Failed to send auto-reply: %s", e)
 
 
 async def handle_operator_reply(update, context):
@@ -429,7 +446,7 @@ async def callback_handler(update, context):
             TicketStatus.CLOSED: "🛑",
         }
 
-        updated_text = status_emoji[new_status] + ''' *''' + ticket.ticket_number + '''* | 📋 *Order ID:* `''' + (ticket.order_id or "-") + '''`. 
+        updated_text = status_emoji[new_status] + ''' *''' + ticket.ticket_number + '''* | 📂 *Order ID:* `''' + (ticket.order_id or "-") + '''`. 
 📍 *Grup:* ''' + (ticket.source_chat_title or "Unknown") + " | 👤 *Pelapor:* " + ticket.reporter_name + '''
 🆔 *User ID:* `''' + str(ticket.reporter_id) + '''` | ⏰ *''' + ticket.created_at.strftime('%Y-%m-%d %H:%M:%S') + ''' UTC*
 📎 *Jenis:* ''' + ticket.content_type.upper() + '''
