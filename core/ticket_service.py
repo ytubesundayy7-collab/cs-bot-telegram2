@@ -263,3 +263,30 @@ class TicketService:
             select(distinct(Ticket.source_chat_id))
         )
         return [row[0] for row in result.all()]
+        
+    async def register_source_group(self, chat_id: int, chat_title: Optional[str]) -> None:
+        """Register a source group for broadcast (if not already registered)."""
+        from core.models import RegisteredGroup
+        from sqlalchemy import select
+        
+        result = await self.session.execute(
+            select(RegisteredGroup).where(RegisteredGroup.chat_id == chat_id)
+        )
+        existing = result.scalar_one_or_none()
+        
+        if not existing:
+            group = RegisteredGroup(
+                chat_id=chat_id,
+                chat_title=chat_title,
+            )
+            self.session.add(group)
+            await self.session.commit()
+            logger.info("Registered new source group: %s (%s)", chat_id, chat_title)
+
+    async def get_all_source_groups(self) -> list[int]:
+        """Get ALL registered source groups (for broadcast)."""
+        from core.models import RegisteredGroup
+        from sqlalchemy import select
+        
+        result = await self.session.execute(select(RegisteredGroup.chat_id))
+        return [row[0] for row in result.all()]
