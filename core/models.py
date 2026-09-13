@@ -90,3 +90,12 @@ class TicketMessage(Base):
     )
 
     ticket = relationship("Ticket", back_populates="messages")
+
+
+class RegisteredGroup(Base):
+    __tablename__ = "registered_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    chat_id = Column(BigInteger, unique=True, nullable=False, index=True)
+    chat_title = Column(String(255), nullable=True)
+    registered_at = Column(DateTime, default=datetime.utcnow, nullable=False)
