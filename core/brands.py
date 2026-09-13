@@ -78,6 +78,11 @@ def get_category_from_prefix(prefix: str) -> str:
     }
     return categories.get(prefix.upper(), "UNKNOWN")
 
+def get_brand_code_from_order_id(order_id: str) -> str:
+    """Extract brand code (3 huruf) dari Order ID."""
+    if order_id and len(order_id) >= 5:
+        return order_id[2:5].upper()
+    return "UNKNOWN"
 
 def get_brand_name(code: str) -> str:
     """Dapatkan nama brand dari kode (opsional, untuk display)."""
