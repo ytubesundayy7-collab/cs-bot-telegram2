@@ -17,6 +17,7 @@ from bot.handlers import (
     chatid_command,
     broadcast_command,
     cancel_command,
+    cancelall_command,
     handle_source_message,
     handle_operator_reply,
     callback_handler,
@@ -34,16 +35,14 @@ logger = logging.getLogger(__name__)
 
 def setup_handlers(application: Application) -> None:
     """Register all handlers."""
-    # Commands (available everywhere)
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("stats", stats_command))
     application.add_handler(CommandHandler("chatid", chatid_command))
     application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
-    application.add_handler(CommandHandler("cancelall", cancel_command))
+    application.add_handler(CommandHandler("cancelall", cancelall_command))
 
-    # Operator replies (only in operator group, must be reply)
     application.add_handler(
         MessageHandler(
             filters.REPLY
@@ -53,7 +52,6 @@ def setup_handlers(application: Application) -> None:
         )
     )
 
-    # Source group messages (all non-command messages in groups)
     application.add_handler(
         MessageHandler(
             filters.ChatType.GROUPS & ~filters.COMMAND,
@@ -61,10 +59,7 @@ def setup_handlers(application: Application) -> None:
         )
     )
 
-    # Callbacks
     application.add_handler(CallbackQueryHandler(callback_handler))
-
-    # Errors
     application.add_error_handler(error_handler)
 
 
