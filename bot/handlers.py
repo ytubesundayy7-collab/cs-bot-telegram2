@@ -343,12 +343,26 @@ async def handle_source_message(update, context):
         content_type = "voice"
 
     created_tickets = []
+    duplicate_tickets = []
 
-    # Create 1 ticket PER ORDER ID (independent)
+    # Create 1 ticket PER ORDER ID (independent + anti-duplikat)
     for order_id in all_order_ids:
         prefix = order_id[:2].upper()
         cat_map = {"DP": "DEPOSIT", "WD": "WITHDRAW", "ST": "SETTLEMENT"}
         category = cat_map.get(prefix, "UNKNOWN")
+
+        # Anti-duplikat: abaikan kalau Order ID ini masih punya tiket aktif
+        async with AsyncSessionLocal() as session:
+            service = TicketService(session)
+            existing = await service.find_active_ticket_by_order_id(order_id)
+        if existing:
+            duplicate_tickets.append(existing)
+            logger.info(
+                "Duplicate complaint ignored: %s (masih aktif di %s)",
+                order_id,
+                existing.ticket_number,
+            )
+            continue
 
         async with AsyncSessionLocal() as session:
             service = TicketService(session)
@@ -418,19 +432,44 @@ async def handle_source_message(update, context):
                 e,
             )
 
-    # Auto-reply ONCE to source group with all tickets
-    if created_tickets:
-        reply_lines = [config.AUTO_REPLY_TEXT, ""]
-        for ticket, category, order_id in created_tickets:
-            reply_lines.append(
-                "🎫 *No. Tiket:* `" + ticket.ticket_number + "` | 📂 *" + category + "*"
-            )
-            reply_lines.append("📋 *Order ID:* `" + order_id + "`")
+    # Auto-reply ONCE ke grup aduan (tiket baru + info duplikat)
+    if created_tickets or duplicate_tickets:
+        reply_lines = []
+
+        if created_tickets:
+            reply_lines.append(config.AUTO_REPLY_TEXT)
             reply_lines.append("")
-        reply_lines.append(
-            "Mohon ditunggu ya, kami akan kabari lagi segera "
-            "setelah ada perkembangan 😊"
-        )
+            for ticket, category, order_id in created_tickets:
+                reply_lines.append(
+                    "🎫 *No. Tiket:* `" + ticket.ticket_number + "` | 📂 *" + category + "*"
+                )
+                reply_lines.append("📋 *Order ID:* `" + order_id + "`")
+                reply_lines.append("")
+            reply_lines.append(
+                "Mohon ditunggu ya, kami akan kabari lagi segera "
+                "setelah ada perkembangan 😊"
+            )
+
+        if duplicate_tickets:
+            if reply_lines:
+                reply_lines.append("")
+                reply_lines.append("➖➖➖➖➖")
+                reply_lines.append("")
+            else:
+                reply_lines.append(
+                    "🙏 *Terima kasih! Aduan Anda sudah kami terima sebelumnya.*"
+                )
+                reply_lines.append("")
+            for dup in duplicate_tickets:
+                reply_lines.append(
+                    "⏳ `" + (dup.order_id or "-") + "` — sudah terdaftar di tiket `"
+                    + dup.ticket_number + "` dan masih dalam proses"
+                )
+            reply_lines.append("")
+            reply_lines.append(
+                "Tidak perlu mengirim aduan ulang ya, "
+                "tim kami sedang menanganinya 🙏"
+            )
 
         try:
             await context.bot.send_message(
