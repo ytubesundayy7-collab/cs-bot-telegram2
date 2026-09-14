@@ -3,3 +3,4 @@ sqlalchemy[asyncio]>=2.0.0
 asyncpg>=0.28.0
 python-dotenv>=1.0.0
 httpx>=0.24.0
+tornado>=6.4
