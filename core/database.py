@@ -33,15 +33,16 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Tambahkan value 'failed' ke enum PostgreSQL (aman dijalankan berulang)
+    # Tambahkan value 'FAILED' ke enum PostgreSQL (aman dijalankan berulang)
+    # Catatan: SQLAlchemy menyimpan NAMA member enum (huruf besar), bukan value-nya
     try:
         async with engine.begin() as conn:
             await conn.execute(
-                text("ALTER TYPE ticketstatus ADD VALUE IF NOT EXISTS 'failed'")
+                text("ALTER TYPE ticketstatus ADD VALUE IF NOT EXISTS 'FAILED'")
             )
-        logger.info("Enum ticketstatus: value 'failed' siap digunakan.")
+        logger.info("Enum ticketstatus: value 'FAILED' siap digunakan.")
     except Exception as e:
-        logger.warning("Migrasi enum 'failed' dilewati: %s", e)
+        logger.warning("Migrasi enum 'FAILED' dilewati: %s", e)
 
 
 async def get_db() -> AsyncSession:
