@@ -12,6 +12,7 @@ from core.database import AsyncSessionLocal
 from core.ticket_service import TicketService
 from core.models import TicketStatus
 from core.alert_service import AlertService
+from core.brands import get_category_from_prefix
 from sqlalchemy import text as sql_text
 
 logger = logging.getLogger(__name__)
@@ -397,6 +398,9 @@ async def handle_source_message(update, context):
                 ],
                 [
                     InlineKeyboardButton("🔧 Proses", callback_data="status:in_progress:" + str(ticket.id)),
+                    InlineKeyboardButton("🚫 Gagal", callback_data="status:failed:" + str(ticket.id)),
+                ],
+                [
                     InlineKeyboardButton("🛑 Cancel", callback_data="status:closed:" + str(ticket.id)),
                 ],
             ]
@@ -467,8 +471,8 @@ async def handle_source_message(update, context):
                 )
             reply_lines.append("")
             reply_lines.append(
-                "Saat tim kami sedang menanganinya, "
-                "Di mohon kesediaannya menunggu 🙏"
+                "Tidak perlu mengirim aduan ulang ya, "
+                "tim kami sedang menanganinya 🙏"
             )
 
         try:
@@ -590,6 +594,7 @@ async def callback_handler(update, context):
             "pending": TicketStatus.PENDING,
             "in_progress": TicketStatus.IN_PROGRESS,
             "closed": TicketStatus.CLOSED,
+            "failed": TicketStatus.FAILED,
         }
         new_status = status_map.get(status_str)
         if not new_status:
@@ -608,6 +613,7 @@ async def callback_handler(update, context):
             TicketStatus.PENDING: "⏳",
             TicketStatus.IN_PROGRESS: "🔧",
             TicketStatus.CLOSED: "🛑",
+            TicketStatus.FAILED: "🚫",
         }
 
         # Simplified update text (same format as chat box)
@@ -628,6 +634,9 @@ async def callback_handler(update, context):
             ],
             [
                 InlineKeyboardButton("🔧 Proses", callback_data="status:in_progress:" + str(ticket.id)),
+                InlineKeyboardButton("🚫 Gagal", callback_data="status:failed:" + str(ticket.id)),
+            ],
+            [
                 InlineKeyboardButton("🛑 Cancel", callback_data="status:closed:" + str(ticket.id)),
             ],
         ]
@@ -647,7 +656,8 @@ async def callback_handler(update, context):
                 "📋 *Order ID:* `" + (ticket.order_id or "-") + "`\n\n"
                 "Silakan lakukan pengecekan (crosscheck) pada transaksi Anda.\n"
                 "Jika masih ada kendala, cukup kirim pesan baru dengan\n"
-                "Order ID yang sama — tiket baru akan otomatis dibuat 🙏"
+                "Order ID yang sama — tiket baru akan otomatis dibuat.\n\n"
+                "Terima kasih 🙏"
             ),
             TicketStatus.PENDING: (
                 "⏳ *Update untuk tiket Anda*\n\n"
@@ -657,7 +667,8 @@ async def callback_handler(update, context):
                 "Transaksi Anda masih dalam antrian konfirmasi.\n"
                 "Mohon menunggu sampai ada status selanjutnya ya —\n"
                 "tidak perlu mengirim aduan ulang, tiket Anda tetap\n"
-                "aktif dan terpantau oleh tim kami 🙏"
+                "aktif dan terpantau oleh tim kami.\n\n"
+                "Terima kasih 🙏"
             ),
             TicketStatus.IN_PROGRESS: (
                 "🔧 *Kabar baik, tiket Anda sedang ditangani!*\n\n"
@@ -665,14 +676,43 @@ async def callback_handler(update, context):
                 "📋 *Order ID:* `" + (ticket.order_id or "-") + "`\n"
                 "📌 *Status:* SEDANG DIPROSES\n\n"
                 "Tim kami sedang bekerja menyelesaikan transaksi Anda.\n"
-                "Mohon ditunggu sampai ada status selanjutnya ya 🙏"
+                "Mohon ditunggu sampai ada status selanjutnya ya.\n\n"
+                "Terima kasih 🙏"
             ),
         }
-        if new_status in status_messages:
+        # FAILED: pesan berbeda untuk Deposit (refund) vs WD/ST (active balance)
+        notify_text = None
+        if new_status == TicketStatus.FAILED:
+            category = get_category_from_prefix((ticket.order_id or "")[:2])
+            header = (
+                "🚫 *Mohon maaf, transaksi Anda TIDAK BERHASIL diproses*\n\n"
+                "🎫 *No. Tiket:* `" + ticket.ticket_number + "`\n"
+                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`\n"
+                "📌 *Status:* FAILED\n\n"
+            )
+            if category == "DEPOSIT":
+                notify_text = (
+                    header
+                    + "Dana deposit Anda tidak masuk ke sistem kami.\n"
+                    "Silakan ajukan refund (pengembalian dana) melalui\n"
+                    "bank yang Anda gunakan untuk melakukan transaksi ini.\n\n"
+                    "Terima kasih 🙏"
+                )
+            else:
+                notify_text = (
+                    header
+                    + "Mohon lakukan crosscheck pada akun Anda — cek apakah\n"
+                    "saldo sudah kembali ke *active balance* (saldo aktif).\n\n"
+                    "Terima kasih 🙏"
+                )
+        elif new_status in status_messages:
+            notify_text = status_messages[new_status]
+
+        if notify_text:
             try:
                 await context.bot.send_message(
                     chat_id=ticket.source_chat_id,
-                    text=status_messages[new_status],
+                    text=notify_text,
                     parse_mode=ParseMode.MARKDOWN,
                     reply_to_message_id=ticket.source_message_id,
                 )
