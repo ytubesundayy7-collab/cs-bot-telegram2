@@ -8,7 +8,7 @@ from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
 from bot.config import config
-from core.database import AsyncSessionLocal
+from core.database import AsyncSessionLocal, engine
 from core.ticket_service import TicketService
 from core.models import TicketStatus
 from core.alert_service import AlertService
@@ -249,6 +249,42 @@ async def cancel_command(update, context):
     logger.info(
         "Ticket %s force closed by %s (silent)", ticket.ticket_number, user.full_name
     )
+
+
+async def fixdb_command(update, context):
+    """Perbaiki enum database secara manual (operator only).
+
+    Jalankan sekali jika tombol Gagal error 'invalid input value for enum'.
+    """
+    chat = update.effective_chat
+    if chat.id != config.OPERATOR_GROUP_ID:
+        return
+
+    try:
+        async with engine.connect() as conn:
+            conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+            await conn.execute(
+                sql_text("ALTER TYPE ticketstatus ADD VALUE IF NOT EXISTS 'FAILED'")
+            )
+            result = await conn.execute(
+                sql_text(
+                    "SELECT enumlabel FROM pg_enum "
+                    "JOIN pg_type ON pg_enum.enumtypid = pg_type.oid "
+                    "WHERE typname = 'ticketstatus' ORDER BY enumsortorder"
+                )
+            )
+            labels = [row[0] for row in result.fetchall()]
+        await update.message.reply_text(
+            "✅ *Database berhasil diperbaiki!*\n\n"
+            "Enum ticketstatus sekarang berisi:\n`" + ", ".join(labels) + "`\n\n"
+            "Silakan test kembali tombol 🚫 Gagal.",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    except Exception as e:
+        await update.message.reply_text(
+            "❌ *Migrasi database gagal:*\n`" + str(e)[:500] + "`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
 
 
 async def cancelall_command(update, context):
