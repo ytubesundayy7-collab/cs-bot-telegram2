@@ -28,6 +28,7 @@ from bot.handlers import (
     broadcast_command,
     cancel_command,
     cancelall_command,
+    fixdb_command,
     ping_command,
     status_command,
     handle_source_message,
@@ -59,6 +60,7 @@ def setup_handlers(application: Application) -> None:
     application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(CommandHandler("cancel", cancel_command))
     application.add_handler(CommandHandler("cancelall", cancelall_command))
+    application.add_handler(CommandHandler("fixdb", fixdb_command))
 
     application.add_handler(
         MessageHandler(
