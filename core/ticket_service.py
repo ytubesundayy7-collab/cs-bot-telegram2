@@ -1,10 +1,13 @@
 """Business logic for ticket management."""
+import logging
 from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy import select, and_, or_, func, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 from core.models import Ticket, TicketMessage, TicketStatus, TicketPriority
 from core.brands import extract_valid_order_ids, get_category_from_prefix
+
+logger = logging.getLogger(__name__)
 
 
 class TicketService:
@@ -245,35 +248,22 @@ class TicketService:
             "resolved": resolved_count.scalar(),
         }
 
-
-    async def get_tickets_today(self) -> list[Ticket]:
-        """Get all tickets created today (from 00:00 UTC)."""
-        from datetime import datetime
-        today_start = datetime.utcnow().replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-        result = await self.session.execute(
-            select(Ticket).where(Ticket.created_at >= today_start)
-        )
-        return result.scalars().all()
-    
     async def get_unique_source_groups(self) -> list[int]:
         """Get list of unique source chat IDs that have sent complaints."""
         result = await self.session.execute(
             select(distinct(Ticket.source_chat_id))
         )
         return [row[0] for row in result.all()]
-        
+
     async def register_source_group(self, chat_id: int, chat_title: Optional[str]) -> None:
         """Register a source group for broadcast (if not already registered)."""
         from core.models import RegisteredGroup
-        from sqlalchemy import select
-        
+
         result = await self.session.execute(
             select(RegisteredGroup).where(RegisteredGroup.chat_id == chat_id)
         )
         existing = result.scalar_one_or_none()
-        
+
         if not existing:
             group = RegisteredGroup(
                 chat_id=chat_id,
@@ -286,7 +276,32 @@ class TicketService:
     async def get_all_source_groups(self) -> list[int]:
         """Get ALL registered source groups (for broadcast)."""
         from core.models import RegisteredGroup
-        from sqlalchemy import select
-        
+
         result = await self.session.execute(select(RegisteredGroup.chat_id))
         return [row[0] for row in result.all()]
+
+    async def get_tickets_today(self) -> list:
+        """Get ALL tickets created today (UTC), any status, oldest first."""
+        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        result = await self.session.execute(
+            select(Ticket)
+            .where(Ticket.created_at >= today_start)
+            .order_by(Ticket.created_at.asc())
+        )
+        return list(result.scalars().all())
+
+    async def find_active_ticket_by_order_id(self, order_id: str):
+        """Find ACTIVE ticket (open/pending/in_progress) with the exact same order_id."""
+        active_statuses = [
+            TicketStatus.OPEN,
+            TicketStatus.PENDING,
+            TicketStatus.IN_PROGRESS,
+        ]
+        result = await self.session.execute(
+            select(Ticket)
+            .where(Ticket.order_id == order_id)
+            .where(Ticket.status.in_(active_statuses))
+            .order_by(Ticket.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
