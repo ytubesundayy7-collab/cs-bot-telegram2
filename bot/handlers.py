@@ -1,5 +1,6 @@
 """Telegram bot handlers - all user interactions."""
 import logging
+import os
 import re
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -11,8 +12,11 @@ from core.database import AsyncSessionLocal
 from core.ticket_service import TicketService
 from core.models import TicketStatus
 from core.alert_service import AlertService
+from sqlalchemy import text as sql_text
 
 logger = logging.getLogger(__name__)
+
+BOT_START_TIME = datetime.utcnow()
 
 
 def esc(text):
@@ -51,6 +55,8 @@ async def help_command(update, context):
 • `/cancel [nomor_tiket]` - Cancel 1 tiket
 • `/cancelall` - Cancel SEMUA tiket pending
 • `/stats` - Lihat statistik tiket
+• `/status` - Cek status bot, database & webhook
+• `/ping` - Cek cepat bot hidup/mati
 • Klik tombol status untuk update progress
 • Reply chat box untuk membalas ke pelanggan"""
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
@@ -77,6 +83,79 @@ async def chatid_command(update, context):
         "• Nama: `" + str(chat.title or chat.full_name) + "`\n"
         "• Type: `" + str(chat.type) + "`\n"
         "• Chat ID: `" + str(chat.id) + "`"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+
+async def ping_command(update, context):
+    """Cek cepat apakah bot hidup. Bisa dipakai di mana saja."""
+    now = datetime.utcnow()
+    uptime = str(now - BOT_START_TIME).split(".")[0]
+    text = (
+        "🏓 *Pong!* Bot aktif dan merespon.\n\n"
+        "⏱ *Uptime:* `" + uptime + "`\n"
+        "🕐 *Waktu server:* `" + now.strftime("%Y-%m-%d %H:%M:%S") + " UTC`"
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+
+
+async def status_command(update, context):
+    """Status lengkap bot: Render, database, webhook. Hanya untuk operator/private."""
+    chat = update.effective_chat
+    if chat.type in ["group", "supergroup"] and chat.id != config.OPERATOR_GROUP_ID:
+        return
+
+    now = datetime.utcnow()
+    uptime = str(now - BOT_START_TIME).split(".")[0]
+
+    # 1. Cek koneksi database
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(sql_text("SELECT 1"))
+        db_status = "✅ Terhubung"
+    except Exception as e:
+        db_status = "❌ Error: " + str(e)[:80]
+
+    # 2. Cek webhook Telegram
+    try:
+        wh = await context.bot.get_webhook_info()
+        webhook_url = wh.url or "-"
+        webhook_pending = str(wh.pending_update_count)
+        webhook_error = wh.last_error_message or "Tidak ada"
+    except Exception as e:
+        webhook_url = "-"
+        webhook_pending = "-"
+        webhook_error = "Gagal cek: " + str(e)[:60]
+
+    # 3. Statistik tiket
+    try:
+        async with AsyncSessionLocal() as session:
+            service = TicketService(session)
+            stats = await service.get_ticket_stats()
+        stats_line = (
+            "🎫 Total: `" + str(stats['total']) + "` | "
+            "🟢 Open: `" + str(stats['open']) + "` | "
+            "🟡 Pending: `" + str(stats['pending']) + "` | "
+            "✅ Resolved: `" + str(stats['resolved']) + "`"
+        )
+    except Exception:
+        stats_line = "⚠️ Gagal mengambil statistik"
+
+    heartbeat_hours = os.getenv("HEARTBEAT_INTERVAL_HOURS", "6")
+
+    text = (
+        "🖥 *STATUS BOT MDGAMING*\n\n"
+        "🤖 *Bot:* ✅ Online & merespon\n"
+        "⏱ *Uptime:* `" + uptime + "`\n"
+        "🕐 *Waktu server:* `" + now.strftime("%Y-%m-%d %H:%M:%S") + " UTC`\n\n"
+        "🗄 *Database:* " + db_status + "\n"
+        "🌐 *Webhook:* `" + webhook_url + "`\n"
+        "📥 *Update tertunda:* `" + webhook_pending + "`\n"
+        "⚠️ *Error webhook terakhir:* `" + webhook_error + "`\n\n"
+        "📊 *Statistik Tiket:*\n" + stats_line + "\n\n"
+        "🔔 *Interval alert:* `" + str(config.ALERT_INTERVAL_MINUTES) + " menit`\n"
+        "💓 *Heartbeat:* tiap `" + heartbeat_hours + " jam`\n\n"
+        "_Catatan: jika bot tidak membalas command ini, berarti bot sedang tidur/mati di Render._"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
