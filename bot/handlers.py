@@ -467,8 +467,8 @@ async def handle_source_message(update, context):
                 )
             reply_lines.append("")
             reply_lines.append(
-                "Tidak perlu mengirim aduan ulang ya, "
-                "tim kami sedang menanganinya 🙏"
+                "Saat tim kami sedang menanganinya, "
+                "Di mohon kesediaannya menunggu 🙏"
             )
 
         try:
