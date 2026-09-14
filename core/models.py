@@ -12,6 +12,7 @@ class TicketStatus(str, enum.Enum):
     PENDING = "pending"
     RESOLVED = "resolved"
     CLOSED = "closed"
+    FAILED = "failed"
 
 
 class TicketPriority(str, enum.Enum):
@@ -90,7 +91,6 @@ class TicketMessage(Base):
     )
 
     ticket = relationship("Ticket", back_populates="messages")
-
 
 class RegisteredGroup(Base):
     __tablename__ = "registered_groups"
