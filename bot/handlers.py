@@ -423,11 +423,14 @@ async def handle_source_message(update, context):
         reply_lines = [config.AUTO_REPLY_TEXT, ""]
         for ticket, category, order_id in created_tickets:
             reply_lines.append(
-                "🎫 *" + ticket.ticket_number + "* | 📂 *" + category + "*"
+                "🎫 *No. Tiket:* `" + ticket.ticket_number + "` | 📂 *" + category + "*"
             )
             reply_lines.append("📋 *Order ID:* `" + order_id + "`")
             reply_lines.append("")
-        reply_lines.append("_Tim kami sedang mengecek semua transaksi Anda._")
+        reply_lines.append(
+            "Mohon ditunggu ya, kami akan kabari lagi segera "
+            "setelah ada perkembangan 😊"
+        )
 
         try:
             await context.bot.send_message(
@@ -464,18 +467,14 @@ async def handle_operator_reply(update, context):
         return
 
     reply_text = message.text or message.caption or ""
-    safe_name = esc(user.full_name)
-    operator_mention = "[" + safe_name + "](tg://user?id=" + str(user.id) + ")"
-
     try:
         if message.text:
             sent = await context.bot.send_message(
                 chat_id=ticket.source_chat_id,
                 text=(
-                    "📨 *Balasan Operator*\n"
-                    "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
-                    "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
-                    "👤 *Operator:* " + operator_mention + "\n\n"
+                    "📨 *Pesan dari tim kami*\n\n"
+                    "🎫 *No. Tiket:* `" + ticket.ticket_number + "`\n"
+                    "📋 *Order ID:* `" + (ticket.order_id or "-") + "`\n\n"
                     + message.text
                 ),
                 parse_mode=ParseMode.MARKDOWN,
@@ -483,10 +482,9 @@ async def handle_operator_reply(update, context):
             )
         else:
             caption = (
-                "📨 *Balasan Operator*\n"
-                "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
-                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. \n"
-                "👤 *Operator:* " + operator_mention
+                "📨 *Pesan dari tim kami*\n\n"
+                "🎫 *No. Tiket:* `" + ticket.ticket_number + "`\n"
+                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`"
             )
             if message.photo:
                 sent = await context.bot.send_photo(
@@ -602,16 +600,40 @@ async def callback_handler(update, context):
             parse_mode=ParseMode.MARKDOWN,
         )
 
-        # Only notify source group for RESOLVED (not for CLOSED/cancel)
-        if new_status == TicketStatus.RESOLVED:
+        # Notify source group for status changes (CLOSED/cancel tetap silent)
+        status_messages = {
+            TicketStatus.RESOLVED: (
+                "✅ *Transaksi Anda telah SELESAI diproses!*\n\n"
+                "🎫 *No. Tiket:* `" + ticket.ticket_number + "`\n"
+                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`\n\n"
+                "Silakan lakukan pengecekan (crosscheck) pada transaksi Anda.\n"
+                "Jika masih ada kendala, cukup kirim pesan baru dengan\n"
+                "Order ID yang sama — tiket baru akan otomatis dibuat 🙏"
+            ),
+            TicketStatus.PENDING: (
+                "⏳ *Update untuk tiket Anda*\n\n"
+                "🎫 *No. Tiket:* `" + ticket.ticket_number + "`\n"
+                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`\n"
+                "📌 *Status:* PENDING\n\n"
+                "Transaksi Anda masih dalam antrian konfirmasi.\n"
+                "Mohon menunggu sampai ada status selanjutnya ya —\n"
+                "tidak perlu mengirim aduan ulang, tiket Anda tetap\n"
+                "aktif dan terpantau oleh tim kami 🙏"
+            ),
+            TicketStatus.IN_PROGRESS: (
+                "🔧 *Kabar baik, tiket Anda sedang ditangani!*\n\n"
+                "🎫 *No. Tiket:* `" + ticket.ticket_number + "`\n"
+                "📋 *Order ID:* `" + (ticket.order_id or "-") + "`\n"
+                "📌 *Status:* SEDANG DIPROSES\n\n"
+                "Tim kami sedang bekerja menyelesaikan transaksi Anda.\n"
+                "Mohon ditunggu sampai ada status selanjutnya ya 🙏"
+            ),
+        }
+        if new_status in status_messages:
             try:
                 await context.bot.send_message(
                     chat_id=ticket.source_chat_id,
-                    text=(
-                        "✅ *Tiket Anda telah DISELESAIKAN*\n\n"
-                        "🎫 *Tiket:* `" + ticket.ticket_number + "`\n"
-                        "📋 *Order ID:* `" + (ticket.order_id or "-") + "`. "
-                    ),
+                    text=status_messages[new_status],
                     parse_mode=ParseMode.MARKDOWN,
                     reply_to_message_id=ticket.source_message_id,
                 )
