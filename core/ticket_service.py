@@ -145,7 +145,7 @@ class TicketService:
         ticket.status = status
         ticket.updated_at = datetime.utcnow()
 
-        if status == TicketStatus.RESOLVED:
+        if status in (TicketStatus.RESOLVED, TicketStatus.FAILED):
             ticket.resolved_at = datetime.utcnow()
 
         await self.session.commit()
