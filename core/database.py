@@ -34,15 +34,18 @@ async def init_db() -> None:
         await conn.run_sync(Base.metadata.create_all)
 
     # Tambahkan value 'FAILED' ke enum PostgreSQL (aman dijalankan berulang)
-    # Catatan: SQLAlchemy menyimpan NAMA member enum (huruf besar), bukan value-nya
+    # Catatan 1: SQLAlchemy menyimpan NAMA member enum (huruf besar), bukan value-nya
+    # Catatan 2: PostgreSQL melarang ALTER TYPE ADD VALUE di dalam transaksi,
+    #            jadi WAJIB pakai isolation_level AUTOCOMMIT (bukan engine.begin())
     try:
-        async with engine.begin() as conn:
+        async with engine.connect() as conn:
+            conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
             await conn.execute(
                 text("ALTER TYPE ticketstatus ADD VALUE IF NOT EXISTS 'FAILED'")
             )
         logger.info("Enum ticketstatus: value 'FAILED' siap digunakan.")
     except Exception as e:
-        logger.warning("Migrasi enum 'FAILED' dilewati: %s", e)
+        logger.error("Migrasi enum 'FAILED' GAGAL: %s", e)
 
 
 async def get_db() -> AsyncSession:
